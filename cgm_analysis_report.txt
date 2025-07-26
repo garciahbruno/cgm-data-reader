@@ -1,0 +1,109 @@
+
+CGM DATA ANALYSIS REPORT
+Patient ID: 10
+Analysis Period: 2018-04-03 to 2018-04-17
+
+RECENT PERIOD SUMMARIES:
+Last 7 Days:
+- Average Glucose: 173.58 mg/dL
+- Time in Range (70-180 mg/dL): 49.94%
+- Time Above Range (>180 mg/dL): 46.98%
+- Time Below Range (<70 mg/dL): 3.09%
+- Glucose Variability: 32.9 mg/dL
+- Average Daily High Time: 11.21 hours
+- Average Daily Low Time: 0.73 hours
+
+Last 30 Days:
+- Average Glucose: 182.57 mg/dL
+- Time in Range (70-180 mg/dL): 44.81%
+- Time Above Range (>180 mg/dL): 53.66%
+- Time Below Range (<70 mg/dL): 1.53%
+- Glucose Variability: 31.89 mg/dL
+- Highest Glucose Observed: 357 mg/dL
+- Lowest Glucose Observed: 58 mg/dL
+
+DAILY BREAKDOWN (Last 14 Days):
+
+2018-04-04 (Wednesday):
+  Mean: 208.88 mg/dL | Range: 112-302 mg/dL
+  Time in Range: 23.61% | High: 76.39% | Low: 0.0%
+  Peak at 11:03 (302 mg/dL) | Lowest at 15:24 (112 mg/dL)
+  Standard Deviation: 45.43 mg/dL
+
+2018-04-05 (Thursday):
+  Mean: 170.15 mg/dL | Range: 77-261 mg/dL
+  Time in Range: 52.78% | High: 47.22% | Low: 0.0%
+  Peak at 23:59 (261 mg/dL) | Lowest at 17:44 (77 mg/dL)
+  Standard Deviation: 51.02 mg/dL
+
+2018-04-06 (Friday):
+  Mean: 193.81 mg/dL | Range: 78-282 mg/dL
+  Time in Range: 36.46% | High: 63.54% | Low: 0.0%
+  Peak at 00:49 (282 mg/dL) | Lowest at 07:29 (78 mg/dL)
+  Standard Deviation: 54.56 mg/dL
+
+2018-04-07 (Saturday):
+  Mean: 185.37 mg/dL | Range: 95-247 mg/dL
+  Time in Range: 40.62% | High: 59.38% | Low: 0.0%
+  Peak at 03:39 (247 mg/dL) | Lowest at 14:39 (95 mg/dL)
+  Standard Deviation: 35.43 mg/dL
+
+2018-04-08 (Sunday):
+  Mean: 211.85 mg/dL | Range: 156-314 mg/dL
+  Time in Range: 16.67% | High: 83.33% | Low: 0.0%
+  Peak at 19:04 (314 mg/dL) | Lowest at 11:14 (156 mg/dL)
+  Standard Deviation: 33.28 mg/dL
+
+2018-04-09 (Monday):
+  Mean: 133.44 mg/dL | Range: 76-205 mg/dL
+  Time in Range: 96.53% | High: 3.47% | Low: 0.0%
+  Peak at 14:59 (205 mg/dL) | Lowest at 07:29 (76 mg/dL)
+  Standard Deviation: 31.27 mg/dL
+
+2018-04-10 (Tuesday):
+  Mean: 183.93 mg/dL | Range: 61-330 mg/dL
+  Time in Range: 55.9% | High: 42.71% | Low: 1.39%
+  Peak at 06:54 (330 mg/dL) | Lowest at 15:49 (61 mg/dL)
+  Standard Deviation: 65.18 mg/dL
+
+2018-04-11 (Wednesday):
+  Mean: 146.38 mg/dL | Range: 63-236 mg/dL
+  Time in Range: 66.92% | High: 28.14% | Low: 4.94%
+  Peak at 17:23 (236 mg/dL) | Lowest at 05:39 (63 mg/dL)
+  Standard Deviation: 49.44 mg/dL
+
+2018-04-12 (Thursday):
+  Mean: 216.09 mg/dL | Range: 131-357 mg/dL
+  Time in Range: 21.88% | High: 78.12% | Low: 0.0%
+  Peak at 15:03 (357 mg/dL) | Lowest at 00:13 (131 mg/dL)
+  Standard Deviation: 50.93 mg/dL
+
+2018-04-13 (Friday):
+  Mean: 145.64 mg/dL | Range: 85-221 mg/dL
+  Time in Range: 76.39% | High: 23.61% | Low: 0.0%
+  Peak at 09:33 (221 mg/dL) | Lowest at 16:18 (85 mg/dL)
+  Standard Deviation: 35.98 mg/dL
+
+2018-04-14 (Saturday):
+  Mean: 129.98 mg/dL | Range: 58-276 mg/dL
+  Time in Range: 63.89% | High: 20.49% | Low: 15.62%
+  Peak at 16:08 (276 mg/dL) | Lowest at 23:28 (58 mg/dL)
+  Standard Deviation: 63.42 mg/dL
+
+2018-04-15 (Sunday):
+  Mean: 221.25 mg/dL | Range: 98-328 mg/dL
+  Time in Range: 24.65% | High: 75.35% | Low: 0.0%
+  Peak at 03:48 (328 mg/dL) | Lowest at 14:13 (98 mg/dL)
+  Standard Deviation: 62.14 mg/dL
+
+2018-04-16 (Monday):
+  Mean: 182.34 mg/dL | Range: 85-257 mg/dL
+  Time in Range: 40.97% | High: 59.03% | Low: 0.0%
+  Peak at 23:18 (257 mg/dL) | Lowest at 15:43 (85 mg/dL)
+  Standard Deviation: 50.44 mg/dL
+
+2018-04-17 (Tuesday):
+  Mean: 173.4 mg/dL | Range: 68-260 mg/dL
+  Time in Range: 54.86% | High: 44.1% | Low: 1.04%
+  Peak at 21:58 (260 mg/dL) | Lowest at 12:23 (68 mg/dL)
+  Standard Deviation: 56.38 mg/dL
