@@ -1,2 +1,2 @@
 Period,StartDate,EndDate,MeanGlucose,GlucoseVariability,MeanStdDev,AvgPercentHigh,AvgPercentLow,AvgPercentInRange,AvgTimeHighHours,AvgTimeLowHours,AvgTimeInRangeHours,MaxGlucoseObserved,MinGlucoseObserved,TotalDays
-Last 7 days,2025-07-17,2025-07-23,116.74,4.37,17.27,0.75,0.0,99.25,0.16,0.0,23.07,223.0,77.0,7
+Last 7 days,2018-10-13,2018-10-19,176.23,22.07,42.04,43.0,0.0,57.0,10.21,0.0,13.34,326,77,7

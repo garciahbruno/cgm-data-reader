@@ -2,18 +2,19 @@ import pandas as pd
 import requests
 from datetime import datetime
 import os
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter, A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+import json
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from matplotlib.backends.backend_pdf import PdfPages
+import seaborn as sns
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.pdfgen import canvas
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
-import matplotlib.pyplot as plt
-import seaborn as sns
-from io import BytesIO
-import base64
-
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+import tempfile
+import numpy as np
 
 def chat_with_ollama(prompt, model="llama3.2"):
     """Send prompt to Ollama and get response"""
@@ -22,530 +23,727 @@ def chat_with_ollama(prompt, model="llama3.2"):
                                json={
                                    'model': model,
                                    'prompt': prompt,
-                                   'stream': False
+                                   'stream': False,
+                                   'options': {
+                                       'temperature': 0.1,
+                                       'top_p': 0.9,
+                                       'num_predict': 2000
+                                   }
                                })
         return response.json()['response']
     except Exception as e:
         return f"Error communicating with Ollama: {e}"
 
-def read_txt_file(filepath):
-    """Read text file content"""
-    try:
-        with open(filepath, 'r', encoding='utf-8') as file:
-            return file.read()
-    except Exception as e:
-        return f"Error reading text file: {e}"
+def format_data_for_llm(daily_data, summary_7_data, summary_30_data):
+    """Convert DataFrames to clear, structured text that LLMs can understand better"""
+    
+    if daily_data.empty or summary_7_data.empty or summary_30_data.empty:
+        raise ValueError("One or more datasets are empty")
+    
+    s7 = summary_7_data.iloc[0]
+    summary_7_text = f"""7-DAY SUMMARY:
+- Mean Glucose: {s7['MeanGlucose']} mg/dL
+- Time in Range (70-180): {s7['AvgPercentInRange']}%
+- Time Above Range (>180): {s7['AvgPercentHigh']}%
+- Time Below Range (<70): {s7['AvgPercentLow']}%
+- Glucose Variability (StdDev): {s7.get('GlucoseVariability', 'N/A')}
+- Period: {s7.get('StartDate', 'N/A')} to {s7.get('EndDate', 'N/A')}"""
 
-def read_csv_file(filepath):
-    """Read and parse CSV file"""
-    try:
-        return pd.read_csv(filepath)
-    except Exception as e:
-        return f"Error reading CSV file: {e}"
+    s30 = summary_30_data.iloc[0]
+    summary_30_text = f"""30-DAY SUMMARY:
+- Mean Glucose: {s30['MeanGlucose']} mg/dL
+- Time in Range (70-180): {s30['AvgPercentInRange']}%
+- Time Above Range (>180): {s30['AvgPercentHigh']}%
+- Time Below Range (<70): {s30['AvgPercentLow']}%
+- Glucose Variability (StdDev): {s30.get('GlucoseVariability', 'N/A')}
+- Period: {s30.get('StartDate', 'N/A')} to {s30.get('EndDate', 'N/A')}"""
 
-def generate_cgm_report(txt_file, daily_csv, summary_7_csv, summary_30_csv):
-    """Generate comprehensive CGM analysis report"""
+    daily_text = "DAILY BREAKDOWN (Recent Days):\n"
+    daily_sorted = daily_data.sort_values('Date').tail(10)
     
-    # Read all files
-    print("Reading CGM data files...")
+    for _, day in daily_sorted.iterrows():
+        date = day['Date']
+        mean_glucose = day['MeanGlucose']
+        time_in_range = day.get('PercentInRange', 'N/A')
+        time_high = day.get('PercentHigh', 'N/A')
+        time_low = day.get('PercentLow', 'N/A')
+        
+        flags = []
+        if isinstance(mean_glucose, (int, float)):
+            if mean_glucose > 200:
+                flags.append("HIGH AVG")
+            elif mean_glucose < 80:
+                flags.append("LOW AVG")
+        
+        if isinstance(time_low, (int, float)) and time_low > 4:
+            flags.append("EXCESS LOW")
+        
+        if isinstance(time_high, (int, float)) and time_high > 25:
+            flags.append("EXCESS HIGH")
+        
+        flag_text = f" [{', '.join(flags)}]" if flags else ""
+        
+        daily_text += f"- {date}: Avg={mean_glucose} mg/dL, InRange={time_in_range}%, High={time_high}%, Low={time_low}%{flag_text}\n"
     
-    # Try to read text file, but make it optional
-    if txt_file and os.path.exists(txt_file):
-        txt_content = read_txt_file(txt_file)
-        if isinstance(txt_content, str) and "Error" in txt_content:
-            print(f"Warning: Could not read text file: {txt_content}")
-            txt_content = "Text report not available - analyzing CSV data only."
-    else:
-        print("Text report not found - will analyze CSV data only.")
-        txt_content = "Text report not available - analyzing CSV data only."
-    
-    daily_data = read_csv_file(daily_csv)
-    summary_7_data = read_csv_file(summary_7_csv)
-    summary_30_data = read_csv_file(summary_30_csv)
-    
-    # Check for errors in required files
-    if isinstance(daily_data, str):
-        return daily_data
-    if isinstance(summary_7_data, str):
-        return summary_7_data
-    if isinstance(summary_30_data, str):
-        return summary_30_data
-    
-    # Convert DataFrames to readable format for the LLM
-    daily_summary = daily_data.to_string(index=False)
-    summary_7_summary = summary_7_data.to_string(index=False)
-    summary_30_summary = summary_30_data.to_string(index=False)
-    
-    # Create the comprehensive prompt for better readability
-    endocrinologist_prompt = f"""
-You are an experienced endocrinologist writing a patient-friendly CGM report. Create a comprehensive but easy-to-understand analysis.
+    return summary_7_text, summary_30_text, daily_text
 
-**PATIENT DATA:**
-{txt_content}
-
-**DAILY SUMMARIES:**
-{daily_summary}
-
-**7-DAY SUMMARY:**
-{summary_7_summary}
-
-**30-DAY SUMMARY:**
-{summary_30_summary}
-
-**INSTRUCTIONS:** Write a clear, professional report using these sections. When referencing specific days, use just the date format "July 15" without day names:
-
-# GLUCOSE CONTROL OVERVIEW
-Start with a simple 2-3 sentence summary of how well the patient's glucose is controlled overall. Use plain language like "excellent," "good," "needs improvement," or "concerning."
-
-# KEY FINDINGS
-List the 3 most important discoveries from the data:
-- Finding 1: [Explain what you found and why it matters, using dates like "July 15" when relevant]
-- Finding 2: [Explain what you found and why it matters, using dates like "July 16" when relevant] 
-- Finding 3: [Explain what you found and why it matters, using dates like "July 17" when relevant]
-
-# TIME IN RANGE ANALYSIS
-Explain what "time in range" means and how this patient is doing:
-- Target range is 70-180 mg/dL
-- Current performance: X% in range
-- What this means for health
-- How it compares to diabetes management goals (>70% is excellent, 50-70% is good)
-
-# GLUCOSE PATTERNS
-Describe when glucose tends to be high or low using specific dates:
-- **High glucose times:** When does it happen most? (reference specific dates like "July 15")
-- **Low glucose concerns:** Any dangerous low episodes? (reference specific dates)
-- **Daily trends:** Are there consistent patterns? (mention specific dates)
-
-# SPECIFIC RECOMMENDATIONS
-
-## Immediate Actions (This Week)
-- Action 1: [Specific, actionable advice]
-- Action 2: [Specific, actionable advice]
-
-## Medication Adjustments
-- [If needed, suggest specific changes with reasoning]
-
-## Lifestyle Modifications  
-- Diet: [Specific meal timing or food suggestions]
-- Exercise: [Specific activity recommendations]
-- Monitoring: [What to watch for, mention specific dates]
-
-# PROGRESS TRACKING
-What should the patient monitor over the next 2 weeks to measure improvement? Include specific dates for follow-up.
-
-**WRITING STYLE:**
-- Use simple, clear language
-- Explain medical terms when first mentioned
-- Be encouraging but honest
-- Focus on actionable advice
-- Use dates in format "July 15" (no day names)
-- Write like you're talking to the patient directly
-
-Generate the complete report now:
-"""
+def create_focused_prompt(summary_7_text, summary_30_text, daily_text):
+    """Create a focused, clear prompt for the LLM"""
     
-    print("Analyzing CGM data...")
-    print("This may take a moment...")
-    
-    # Get analysis from Ollama
-    report = chat_with_ollama(endocrinologist_prompt)
-    
-    return report
+    prompt = f"""You are analyzing CGM data for a pediatric patient. Provide a clinical assessment based on ONLY the data provided below. Do not make up numbers or contradict the given data.
 
-def create_glucose_charts(daily_data, summary_7_data, summary_30_data):
-    """Create glucose monitoring charts"""
+{summary_7_text}
+
+{summary_30_text}
+
+{daily_text}
+
+CLINICAL TARGETS (Pediatric):
+- Target Range: 70-180 mg/dL
+- Time in Range Goal: >70%
+- Time Below Range: <4%
+- Time Above Range: <25%
+
+Please provide:
+
+1. OVERALL ASSESSMENT: Compare 7-day vs 30-day trends
+2. KEY CONCERNS: Any values outside targets (if none, state "No significant concerns identified")
+3. PATTERNS NOTED: Daily trends or recurring issues (if none, state "No concerning patterns observed")
+4. RECOMMENDATIONS: Only provide recommendations if there are actual concerns or values outside targets. If all metrics meet clinical targets, state "Current management appears effective. Continue current diabetes care plan."
+
+Keep your response concise and use ONLY the exact numbers provided above."""
+
+    return prompt
+
+def create_glucose_trend_chart_apple(daily_data, temp_dir):
+    """Create Apple-style glucose trend chart"""
+    # Set Apple-style chart appearance
+    plt.style.use('default')
+    fig, ax = plt.subplots(figsize=(12, 6))
+    fig.patch.set_facecolor('white')
     
-    # Set style for better looking plots
-    plt.style.use('seaborn-v0_8')
-    sns.set_palette("husl")
+    # Apple color palette
+    apple_blue = '#007AFF'
+    apple_green = '#34C759'
+    apple_orange = '#FF9500'
+    apple_red = '#FF3B30'
+    apple_gray = '#8E8E93'
     
-    # Convert date strings to datetime for proper formatting
-    daily_data_copy = daily_data.copy()
-    daily_data_copy['Date'] = pd.to_datetime(daily_data_copy['Date'])
-    daily_data_copy = daily_data_copy.sort_values('Date')
+    daily_data['Date'] = pd.to_datetime(daily_data['Date'])
+    daily_sorted = daily_data.sort_values('Date')
     
-    # Create figure with subplots
-    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-    fig.suptitle('CGM Analysis Dashboard', fontsize=20, fontweight='bold')
+    # Clean background
+    ax.set_facecolor('white')
     
-    # Chart 1: Daily Mean Glucose Trend
-    axes[0,0].plot(daily_data_copy['Date'], daily_data_copy['MeanGlucose'], 
-                   marker='o', linewidth=2, markersize=6, color='#2E86C1')
-    axes[0,0].axhline(y=180, color='red', linestyle='--', alpha=0.7, label='High (>180)')
-    axes[0,0].axhline(y=70, color='orange', linestyle='--', alpha=0.7, label='Low (<70)')
-    axes[0,0].fill_between(daily_data_copy['Date'], 70, 180, alpha=0.2, color='green', label='Target Range')
-    axes[0,0].set_title('Daily Average Glucose Trend', fontweight='bold')
-    axes[0,0].set_ylabel('Glucose (mg/dL)')
-    axes[0,0].set_xlabel('Date')
+    # Add subtle target range shading
+    ax.axhspan(70, 180, alpha=0.08, color=apple_green, zorder=0)
+    ax.axhspan(180, 400, alpha=0.05, color=apple_red, zorder=0)
+    ax.axhspan(0, 70, alpha=0.05, color=apple_orange, zorder=0)
     
-    # Format x-axis to show just month/day
-    import matplotlib.dates as mdates
-    axes[0,0].xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
-    axes[0,0].xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(daily_data_copy)//7)))
-    plt.setp(axes[0,0].xaxis.get_majorticklabels(), rotation=45)
+    # Plot with Apple-style line
+    ax.plot(daily_sorted['Date'], daily_sorted['MeanGlucose'], 
+            linewidth=3, color=apple_blue, zorder=3)
     
-    axes[0,0].legend()
-    axes[0,0].grid(True, alpha=0.3)
+    # Add subtle dots
+    ax.scatter(daily_sorted['Date'], daily_sorted['MeanGlucose'], 
+               s=40, color=apple_blue, zorder=4, alpha=0.8)
     
-    # Chart 2: Time in Range Comparison
-    periods = ['7-Day', '30-Day']
-    tir_values = [summary_7_data['AvgPercentInRange'].iloc[0], 
-                  summary_30_data['AvgPercentInRange'].iloc[0]]
-    high_values = [summary_7_data['AvgPercentHigh'].iloc[0], 
-                   summary_30_data['AvgPercentHigh'].iloc[0]]
-    low_values = [summary_7_data['AvgPercentLow'].iloc[0], 
-                  summary_30_data['AvgPercentLow'].iloc[0]]
+    # Clean styling
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_color('#E5E5EA')
+    ax.spines['bottom'].set_color('#E5E5EA')
     
-    x = range(len(periods))
-    width = 0.25
+    # Subtle grid
+    ax.grid(True, alpha=0.2, color='#C7C7CC', linewidth=0.5)
     
-    axes[0,1].bar([i - width for i in x], tir_values, width, label='In Range (70-180)', color='#28B463')
-    axes[0,1].bar(x, high_values, width, label='High (>180)', color='#E74C3C')
-    axes[0,1].bar([i + width for i in x], low_values, width, label='Low (<70)', color='#F39C12')
-    
-    axes[0,1].set_title('Time in Range Comparison', fontweight='bold')
-    axes[0,1].set_ylabel('Percentage (%)')
-    axes[0,1].set_xticks(x)
-    axes[0,1].set_xticklabels(periods)
-    axes[0,1].legend()
-    axes[0,1].grid(True, alpha=0.3)
-    
-    # Chart 3: Daily Glucose Variability
-    axes[1,0].bar(daily_data_copy['Date'], daily_data_copy['StdDev'], 
-                  color='#8E44AD', alpha=0.7)
-    axes[1,0].axhline(y=30, color='red', linestyle='--', alpha=0.7, label='High Variability (>30)')
-    axes[1,0].set_title('Daily Glucose Variability (Standard Deviation)', fontweight='bold')
-    axes[1,0].set_ylabel('Standard Deviation (mg/dL)')
-    axes[1,0].set_xlabel('Date')
+    # Apple-style labels
+    ax.set_xlabel('')
+    ax.set_ylabel('mg/dL', fontsize=12, color='#3C3C43', fontweight='500')
+    ax.tick_params(colors='#3C3C43', labelsize=10)
     
     # Format x-axis
-    axes[1,0].xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
-    axes[1,0].xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(daily_data_copy)//7)))
-    plt.setp(axes[1,0].xaxis.get_majorticklabels(), rotation=45)
-    
-    axes[1,0].legend()
-    axes[1,0].grid(True, alpha=0.3)
-    
-    # Chart 4: Summary Metrics Gauge
-    metrics = ['Mean Glucose', 'Time in Range', 'Glucose Variability']
-    values_7d = [summary_7_data['MeanGlucose'].iloc[0], 
-                 summary_7_data['AvgPercentInRange'].iloc[0],
-                 summary_7_data['GlucoseVariability'].iloc[0]]
-    values_30d = [summary_30_data['MeanGlucose'].iloc[0], 
-                  summary_30_data['AvgPercentInRange'].iloc[0],
-                  summary_30_data['GlucoseVariability'].iloc[0]]
-    
-    x = range(len(metrics))
-    width = 0.35
-    
-    axes[1,1].bar([i - width/2 for i in x], values_7d, width, label='7-Day Average', color='#3498DB')
-    axes[1,1].bar([i + width/2 for i in x], values_30d, width, label='30-Day Average', color='#E67E22')
-    
-    axes[1,1].set_title('Key Metrics Comparison', fontweight='bold')
-    axes[1,1].set_ylabel('Values')
-    axes[1,1].set_xticks(x)
-    axes[1,1].set_xticklabels(metrics, rotation=45)
-    axes[1,1].legend()
-    axes[1,1].grid(True, alpha=0.3)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+    ax.xaxis.set_major_locator(mdates.DayLocator(interval=2))
+    plt.xticks(rotation=0)
     
     plt.tight_layout()
-    
-    # Save chart to bytes
-    chart_buffer = BytesIO()
-    plt.savefig(chart_buffer, format='png', dpi=300, bbox_inches='tight')
-    chart_buffer.seek(0)
+    chart_path = os.path.join(temp_dir, 'glucose_trend.png')
+    plt.savefig(chart_path, dpi=300, bbox_inches='tight', facecolor='white')
     plt.close()
     
-    return chart_buffer
+    return chart_path
 
-def save_report_as_html(report, daily_data, summary_7_data, summary_30_data, output_file="cgm_clinical_report.html"):
-    """Save the generated report as a beautiful HTML file"""
+def create_time_in_range_chart_apple(daily_data, temp_dir):
+    """Create Apple-style time in range chart"""
+    fig, ax = plt.subplots(figsize=(12, 6))
+    fig.patch.set_facecolor('white')
+    
+    # Apple colors
+    apple_green = '#34C759'
+    apple_orange = '#FF9500'
+    apple_red = '#FF3B30'
+    
+    daily_data['Date'] = pd.to_datetime(daily_data['Date'])
+    daily_sorted = daily_data.sort_values('Date').tail(14)
+    
+    ax.set_facecolor('white')
+    
+    dates = daily_sorted['Date']
+    low = daily_sorted.get('PercentLow', 0)
+    in_range = daily_sorted.get('PercentInRange', 0)
+    high = daily_sorted.get('PercentHigh', 0)
+    
+    # Apple-style bars with rounded appearance effect
+    width = 0.7
+    ax.bar(dates, low, width, label='Below Range', color=apple_orange, alpha=0.9)
+    ax.bar(dates, in_range, width, bottom=low, label='In Range', color=apple_green, alpha=0.9)
+    ax.bar(dates, high, width, bottom=low+in_range, label='Above Range', color=apple_red, alpha=0.9)
+    
+    # Clean styling
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_color('#E5E5EA')
+    ax.spines['bottom'].set_color('#E5E5EA')
+    
+    ax.set_xlabel('')
+    ax.set_ylabel('Time (%)', fontsize=12, color='#3C3C43', fontweight='500')
+    ax.tick_params(colors='#3C3C43', labelsize=10)
+    
+    # Subtle grid
+    ax.grid(True, alpha=0.2, axis='y', color='#C7C7CC', linewidth=0.5)
+    
+    # Apple-style legend
+    ax.legend(frameon=False, loc='upper right', fontsize=10)
+    
+    # Format x-axis
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+    ax.xaxis.set_major_locator(mdates.DayLocator(interval=2))
+    plt.xticks(rotation=0)
+    
+    plt.tight_layout()
+    chart_path = os.path.join(temp_dir, 'time_in_range.png')
+    plt.savefig(chart_path, dpi=300, bbox_inches='tight', facecolor='white')
+    plt.close()
+    
+    return chart_path
+
+def create_summary_comparison_chart_apple(summary_7_data, summary_30_data, temp_dir):
+    """Create Apple-style comparison chart"""
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 8))
+    fig.patch.set_facecolor('white')
+    
+    # Apple colors
+    apple_blue = '#007AFF'
+    apple_purple = '#5856D6'
+    apple_green = '#34C759'
+    apple_mint = '#00C7BE'
+    apple_orange = '#FF9500'
+    apple_yellow = '#FFCC00'
+    apple_red = '#FF3B30'
+    apple_pink = '#FF2D92'
+    
+    s7 = summary_7_data.iloc[0]
+    s30 = summary_30_data.iloc[0]
+    
+    periods = ['7 Days', '30 Days']
+    
+    # Clean background for all subplots
+    for ax in [ax1, ax2, ax3, ax4]:
+        ax.set_facecolor('white')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_color('#E5E5EA')
+        ax.spines['bottom'].set_color('#E5E5EA')
+        ax.grid(True, alpha=0.15, axis='y', color='#C7C7CC', linewidth=0.5)
+        ax.tick_params(colors='#3C3C43', labelsize=9)
+    
+    # Mean Glucose Comparison
+    mean_glucose = [s7['MeanGlucose'], s30['MeanGlucose']]
+    bars1 = ax1.bar(periods, mean_glucose, color=[apple_blue, apple_purple], alpha=0.9, width=0.6)
+    ax1.axhline(y=180, color=apple_red, linestyle='-', alpha=0.3, linewidth=2)
+    ax1.axhline(y=70, color=apple_orange, linestyle='-', alpha=0.3, linewidth=2)
+    ax1.set_ylabel('mg/dL', fontsize=10, color='#3C3C43', fontweight='500')
+    ax1.set_ylim(0, max(mean_glucose) * 1.2)
+    
+    for bar, value in zip(bars1, mean_glucose):
+        ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 3, 
+                f'{value:.0f}', ha='center', va='bottom', fontweight='600', fontsize=11, color='#3C3C43')
+    
+    # Time in Range Comparison
+    tir = [s7['AvgPercentInRange'], s30['AvgPercentInRange']]
+    bars2 = ax2.bar(periods, tir, color=[apple_green, apple_mint], alpha=0.9, width=0.6)
+    ax2.axhline(y=70, color=apple_green, linestyle='-', alpha=0.3, linewidth=2)
+    ax2.set_ylabel('Time in Range (%)', fontsize=10, color='#3C3C43', fontweight='500')
+    ax2.set_ylim(0, 100)
+    
+    for bar, value in zip(bars2, tir):
+        ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 2, 
+                f'{value:.0f}%', ha='center', va='bottom', fontweight='600', fontsize=11, color='#3C3C43')
+    
+    # Time Above Range
+    thr = [s7['AvgPercentHigh'], s30['AvgPercentHigh']]
+    bars3 = ax3.bar(periods, thr, color=[apple_red, apple_pink], alpha=0.9, width=0.6)
+    ax3.axhline(y=25, color=apple_red, linestyle='-', alpha=0.3, linewidth=2)
+    ax3.set_ylabel('Time Above Range (%)', fontsize=10, color='#3C3C43', fontweight='500')
+    ax3.set_ylim(0, max(50, max(thr) * 1.2))
+    
+    for bar, value in zip(bars3, thr):
+        ax3.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5, 
+                f'{value:.0f}%', ha='center', va='bottom', fontweight='600', fontsize=11, color='#3C3C43')
+    
+    # Time Below Range
+    tlr = [s7['AvgPercentLow'], s30['AvgPercentLow']]
+    bars4 = ax4.bar(periods, tlr, color=[apple_orange, apple_yellow], alpha=0.9, width=0.6)
+    ax4.axhline(y=4, color=apple_orange, linestyle='-', alpha=0.3, linewidth=2)
+    ax4.set_ylabel('Time Below Range (%)', fontsize=10, color='#3C3C43', fontweight='500')
+    ax4.set_ylim(0, max(10, max(tlr) * 1.5))
+    
+    for bar, value in zip(bars4, tlr):
+        ax4.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.2, 
+                f'{value:.1f}%', ha='center', va='bottom', fontweight='600', fontsize=11, color='#3C3C43')
+    
+    # Remove x-axis labels for cleaner look
+    for ax in [ax1, ax2, ax3, ax4]:
+        ax.set_xlabel('')
+    
+    plt.tight_layout()
+    chart_path = os.path.join(temp_dir, 'summary_comparison.png')
+    plt.savefig(chart_path, dpi=300, bbox_inches='tight', facecolor='white')
+    plt.close()
+    
+    return chart_path
+
+def assess_clinical_targets(summary_7_data, summary_30_data):
+    """Assess if patient meets clinical targets"""
+    s7 = summary_7_data.iloc[0]
+    s30 = summary_30_data.iloc[0]
+    
+    targets_met = {
+        'tir_7day': s7['AvgPercentInRange'] > 70,
+        'tir_30day': s30['AvgPercentInRange'] > 70,
+        'high_7day': s7['AvgPercentHigh'] < 25,
+        'high_30day': s30['AvgPercentHigh'] < 25,
+        'low_7day': s7['AvgPercentLow'] < 4,
+        'low_30day': s30['AvgPercentLow'] < 4,
+        'glucose_7day': 70 <= s7['MeanGlucose'] <= 180,
+        'glucose_30day': 70 <= s30['MeanGlucose'] <= 180
+    }
+    
+    all_targets_met = all(targets_met.values())
+    critical_targets_met = (
+        targets_met['tir_7day'] and targets_met['tir_30day'] and
+        targets_met['low_7day'] and targets_met['low_30day']
+    )
+    
+    return all_targets_met, critical_targets_met, targets_met
+
+def parse_analysis_text(analysis_text):
+    """Parse the analysis text into structured sections"""
+    sections = {
+        'overall_assessment': '',
+        'key_concerns': [],
+        'patterns_noted': [],
+        'recommendations': []
+    }
+    
+    current_section = None
+    lines = analysis_text.split('\n')
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Identify section headers
+        if 'OVERALL ASSESSMENT' in line.upper():
+            current_section = 'overall_assessment'
+            continue
+        elif 'KEY CONCERNS' in line.upper():
+            current_section = 'key_concerns'
+            continue
+        elif 'PATTERNS NOTED' in line.upper():
+            current_section = 'patterns_noted'
+            continue
+        elif 'RECOMMENDATIONS' in line.upper():
+            current_section = 'recommendations'
+            continue
+        
+        # Add content to appropriate section
+        if current_section == 'overall_assessment':
+            sections['overall_assessment'] += line + ' '
+        elif current_section in ['key_concerns', 'patterns_noted', 'recommendations']:
+            # Remove numbering and formatting artifacts
+            clean_line = line
+            if line.startswith(('1.', '2.', '3.', '4.', '5.')):
+                clean_line = line[2:].strip()
+            if clean_line.startswith('**') and clean_line.endswith('**'):
+                clean_line = clean_line[2:-2]
+            if clean_line:
+                sections[current_section].append(clean_line)
+    
+    return sections
+
+def create_pdf_report(analysis_text, daily_data, summary_7_data, summary_30_data, output_filename):
+    """Create an Apple-inspired PDF report with clean design"""
+    
+    # Create temporary directory for charts
+    temp_dir = tempfile.mkdtemp()
+    
     try:
-        # Create charts first
-        chart_buffer = create_glucose_charts(daily_data, summary_7_data, summary_30_data)
+        # Generate charts with Apple-style colors
+        print("Generating charts...")
+        glucose_trend_path = create_glucose_trend_chart_apple(daily_data, temp_dir)
+        time_range_path = create_time_in_range_chart_apple(daily_data, temp_dir)
+        summary_comparison_path = create_summary_comparison_chart_apple(summary_7_data, summary_30_data, temp_dir)
         
-        # Save chart as base64 for embedding
-        import base64
-        chart_base64 = base64.b64encode(chart_buffer.getvalue()).decode()
+        # Create PDF with Apple-inspired styling
+        print("Creating PDF report...")
+        doc = SimpleDocTemplate(
+            output_filename, 
+            pagesize=letter, 
+            topMargin=0.8*inch,
+            bottomMargin=0.8*inch,
+            leftMargin=0.8*inch,
+            rightMargin=0.8*inch
+        )
+        story = []
         
-        # Create beautiful HTML
-        html_content = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CGM Clinical Report</title>
-    <style>
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6;
-            margin: 0;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-        }}
+        # Apple-inspired color palette
+        apple_blue = colors.Color(0.0, 0.48, 1.0)  # SF Blue
+        apple_gray = colors.Color(0.56, 0.56, 0.58)  # SF Gray
+        apple_light_gray = colors.Color(0.96, 0.96, 0.96)  # Light gray background
+        apple_dark_gray = colors.Color(0.17, 0.17, 0.18)  # Dark gray text
         
-        .container {{
-            max-width: 1000px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }}
+        # Define Apple-inspired styles
+        styles = getSampleStyleSheet()
         
-        .header {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 40px;
-            text-align: center;
-        }}
+        title_style = ParagraphStyle(
+            'AppleTitle',
+            parent=styles['Heading1'],
+            fontSize=32,
+            spaceAfter=8,
+            spaceBefore=0,
+            alignment=TA_LEFT,
+            textColor=apple_dark_gray,
+            fontName='Helvetica-Bold'
+        )
         
-        .header h1 {{
-            margin: 0;
-            font-size: 2.5rem;
-            font-weight: 300;
-        }}
+        subtitle_style = ParagraphStyle(
+            'AppleSubtitle',
+            parent=styles['Normal'],
+            fontSize=16,
+            spaceAfter=40,
+            spaceBefore=0,
+            alignment=TA_LEFT,
+            textColor=apple_gray,
+            fontName='Helvetica'
+        )
         
-        .header .subtitle {{
-            margin-top: 10px;
-            font-size: 1.1rem;
-            opacity: 0.9;
-        }}
+        section_heading_style = ParagraphStyle(
+            'AppleSectionHeading',
+            parent=styles['Heading2'],
+            fontSize=20,
+            spaceAfter=16,
+            spaceBefore=32,
+            textColor=apple_dark_gray,
+            fontName='Helvetica-Bold'
+        )
         
-        .content {{
-            padding: 40px;
-        }}
+        subsection_style = ParagraphStyle(
+            'AppleSubsection',
+            parent=styles['Heading3'],
+            fontSize=16,
+            spaceAfter=12,
+            spaceBefore=20,
+            textColor=apple_blue,
+            fontName='Helvetica-Bold'
+        )
         
-        .summary-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin: 30px 0;
-        }}
+        body_style = ParagraphStyle(
+            'AppleBody',
+            parent=styles['Normal'],
+            fontSize=12,
+            spaceAfter=8,
+            spaceBefore=0,
+            textColor=apple_dark_gray,
+            fontName='Helvetica',
+            leading=18
+        )
         
-        .metric-card {{
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 20px;
-            text-align: center;
-            border-left: 5px solid #667eea;
-        }}
+        bullet_style = ParagraphStyle(
+            'AppleBullet',
+            parent=styles['Normal'],
+            fontSize=12,
+            spaceAfter=6,
+            spaceBefore=0,
+            leftIndent=20,
+            textColor=apple_dark_gray,
+            fontName='Helvetica',
+            leading=16
+        )
         
-        .metric-value {{
-            font-size: 2rem;
-            font-weight: bold;
-            color: #333;
-            margin-bottom: 5px;
-        }}
+        # Title section
+        story.append(Paragraph("CGM Analysis", title_style))
+        story.append(Paragraph(f"Report generated {datetime.now().strftime('%B %d, %Y')}", subtitle_style))
         
-        .metric-label {{
-            color: #666;
-            font-size: 0.9rem;
-        }}
+        # Key metrics card
+        s7 = summary_7_data.iloc[0]
+        s30 = summary_30_data.iloc[0]
         
-        .metric-target {{
-            color: #28a745;
-            font-size: 0.8rem;
-            margin-top: 5px;
-        }}
+        story.append(Paragraph("Key Metrics", section_heading_style))
         
-        .chart-section {{
-            margin: 40px 0;
-            text-align: center;
-        }}
+        # Create a clean metrics table
+        metrics_data = [
+            ['', '7 Days', '30 Days', 'Target'],
+            ['Average Glucose', f"{s7['MeanGlucose']:.0f} mg/dL", f"{s30['MeanGlucose']:.0f} mg/dL", "70-180 mg/dL"],
+            ['Time in Range', f"{s7['AvgPercentInRange']:.0f}%", f"{s30['AvgPercentInRange']:.0f}%", "> 70%"],
+            ['Time Above Range', f"{s7['AvgPercentHigh']:.0f}%", f"{s30['AvgPercentHigh']:.0f}%", "< 25%"],
+            ['Time Below Range', f"{s7['AvgPercentLow']:.0f}%", f"{s30['AvgPercentLow']:.0f}%", "< 4%"]
+        ]
         
-        .chart-image {{
-            max-width: 100%;
-            border-radius: 10px;
-            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
-        }}
-        
-        .report-section {{
-            margin: 30px 0;
-        }}
-        
-        .report-section h1 {{
-            color: #333;
-            border-bottom: 3px solid #667eea;
-            padding-bottom: 10px;
-            font-size: 1.8rem;
-        }}
-        
-        .report-section h2 {{
-            color: #555;
-            margin-top: 25px;
-            font-size: 1.4rem;
-        }}
-        
-        .report-section h3 {{
-            color: #666;
-            margin-top: 20px;
-            font-size: 1.2rem;
-        }}
-        
-        .report-content {{
-            background: #f8f9fa;
-            padding: 25px;
-            border-radius: 10px;
-            margin: 20px 0;
-            border-left: 5px solid #28a745;
-        }}
-        
-        .key-findings {{
-            background: #e3f2fd;
-            border-left: 5px solid #2196f3;
-        }}
-        
-        .recommendations {{
-            background: #f3e5f5;
-            border-left: 5px solid #9c27b0;
-        }}
-        
-        .important {{
-            background: #fff3e0;
-            border-left: 5px solid #ff9800;
-        }}
-        
-        ul, ol {{
-            padding-left: 20px;
-        }}
-        
-        li {{
-            margin: 8px 0;
-        }}
-        
-        .footer {{
-            background: #f8f9fa;
-            padding: 20px;
-            text-align: center;
-            color: #666;
-            border-top: 1px solid #dee2e6;
-        }}
-        
-        .status-excellent {{ color: #28a745; }}
-        .status-good {{ color: #17a2b8; }}
-        .status-needs-improvement {{ color: #ffc107; }}
-        .status-concerning {{ color: #dc3545; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🩺 CGM Clinical Report</h1>
-            <div class="subtitle">
-                Continuous Glucose Monitoring Analysis<br>
-                Generated on {datetime.now().strftime('%B %d, %Y at %I:%M %p')}
-            </div>
-        </div>
-        
-        <div class="content">
-            <div class="summary-grid">
-                <div class="metric-card">
-                    <div class="metric-value">{summary_7_data['MeanGlucose'].iloc[0]}</div>
-                    <div class="metric-label">7-Day Avg Glucose</div>
-                    <div class="metric-target">Target: 70-180 mg/dL</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">{summary_7_data['AvgPercentInRange'].iloc[0]}%</div>
-                    <div class="metric-label">Time in Range</div>
-                    <div class="metric-target">Goal: >70%</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">{summary_7_data['AvgPercentHigh'].iloc[0]}%</div>
-                    <div class="metric-label">Time Above Range</div>
-                    <div class="metric-target">Goal: <25%</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">{summary_7_data['AvgPercentLow'].iloc[0]}%</div>
-                    <div class="metric-label">Time Below Range</div>
-                    <div class="metric-target">Goal: <4%</div>
-                </div>
-            </div>
+        metrics_table = Table(metrics_data, colWidths=[2*inch, 1.2*inch, 1.2*inch, 1.4*inch])
+        metrics_table.setStyle(TableStyle([
+            # Header row
+            ('BACKGROUND', (0, 0), (-1, 0), apple_light_gray),
+            ('TEXTCOLOR', (0, 0), (-1, 0), apple_dark_gray),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
             
-            <div class="chart-section">
-                <h2>📊 Glucose Monitoring Dashboard</h2>
-                <img src="data:image/png;base64,{chart_base64}" alt="CGM Dashboard" class="chart-image">
-            </div>
+            # Data rows
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 11),
+            ('TEXTCOLOR', (0, 1), (-1, -1), apple_dark_gray),
             
-            <div class="report-section">
-                <div class="report-content">
-"""
-
-        # Process the report content with better formatting
-        report_lines = report.split('\n')
-        in_section = False
-        section_class = "report-content"
+            # Remove grid lines for cleaner look
+            ('LINEBELOW', (0, 0), (-1, 0), 0.5, apple_gray),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ]))
         
-        for line in report_lines:
-            line = line.strip()
-            if not line:
-                continue
+        story.append(metrics_table)
+        story.append(Spacer(1, 30))
+        
+        # Charts section
+        story.append(Paragraph("Glucose Trends", section_heading_style))
+        story.append(Image(glucose_trend_path, width=6*inch, height=3*inch))
+        story.append(Spacer(1, 20))
+        
+        story.append(Paragraph("Daily Distribution", section_heading_style))
+        story.append(Image(time_range_path, width=6*inch, height=3*inch))
+        story.append(PageBreak())
+        
+        story.append(Paragraph("Period Comparison", section_heading_style))
+        story.append(Image(summary_comparison_path, width=6*inch, height=3.6*inch))
+        story.append(Spacer(1, 30))
+        
+        # Parse and format clinical analysis
+        parsed_analysis = parse_analysis_text(analysis_text)
+        
+        # Assess if targets are met
+        all_targets_met, critical_targets_met, targets_breakdown = assess_clinical_targets(summary_7_data, summary_30_data)
+        
+        story.append(Paragraph("Clinical Assessment", section_heading_style))
+        
+        # Add status indicator at the top
+        if all_targets_met:
+            status_text = "Clinical Status: All targets met - Excellent glucose management"
+            status_color = colors.Color(0.2, 0.7, 0.3)  # Green
+        elif critical_targets_met:
+            status_text = "Clinical Status: Key safety targets met - Good glucose management"
+            status_color = colors.Color(1.0, 0.6, 0.0)  # Orange
+        else:
+            status_text = "Clinical Status: Some targets not met - Requires attention"
+            status_color = colors.Color(0.9, 0.3, 0.3)  # Red
+        
+        status_style = ParagraphStyle(
+            'StatusStyle',
+            parent=body_style,
+            fontSize=13,
+            spaceAfter=20,
+            textColor=status_color,
+            fontName='Helvetica-Bold'
+        )
+        story.append(Paragraph(status_text, status_style))
+        
+        # Overall Assessment
+        if parsed_analysis['overall_assessment']:
+            story.append(Paragraph("Overview", subsection_style))
+            story.append(Paragraph(parsed_analysis['overall_assessment'].strip(), body_style))
+            story.append(Spacer(1, 16))
+        
+        # Key Concerns - only show if there are actual concerns
+        if parsed_analysis['key_concerns']:
+            has_real_concerns = not any(
+                'no significant concerns' in concern.lower() or 
+                'no concerns identified' in concern.lower()
+                for concern in parsed_analysis['key_concerns']
+            )
             
-            # Detect section types for styling
-            if "KEY FINDINGS" in line.upper() or "FINDINGS" in line.upper():
-                section_class = "key-findings"
-            elif "RECOMMENDATION" in line.upper() or "ACTION" in line.upper():
-                section_class = "recommendations"
-            elif "IMPORTANT" in line.upper() or "URGENT" in line.upper() or "RISK" in line.upper():
-                section_class = "important"
+            if has_real_concerns:
+                story.append(Paragraph("Key Concerns", subsection_style))
+                for concern in parsed_analysis['key_concerns']:
+                    story.append(Paragraph(f"• {concern}", bullet_style))
+                story.append(Spacer(1, 16))
             else:
-                section_class = "report-content"
+                story.append(Paragraph("Key Concerns", subsection_style))
+                story.append(Paragraph("No significant concerns identified with current glucose management.", body_style))
+                story.append(Spacer(1, 16))
+        
+        # Patterns - only show if there are concerning patterns
+        if parsed_analysis['patterns_noted']:
+            has_concerning_patterns = not any(
+                'no concerning patterns' in pattern.lower() or 
+                'no patterns observed' in pattern.lower()
+                for pattern in parsed_analysis['patterns_noted']
+            )
             
-            # Process different line types
-            if line.startswith('# '):
-                if in_section:
-                    html_content += "</div>\n"
-                title = line.replace('# ', '').strip()
-                html_content += f'<h1>{title}</h1>\n<div class="{section_class}">\n'
-                in_section = True
-            elif line.startswith('## '):
-                title = line.replace('## ', '').strip()
-                html_content += f'<h2>{title}</h2>\n'
-            elif line.startswith('### '):
-                title = line.replace('### ', '').strip()
-                html_content += f'<h3>{title}</h3>\n'
-            elif line.startswith('- '):
-                bullet_text = line.replace('- ', '')
-                html_content += f'<li>{bullet_text}</li>\n'
-            elif line.startswith('**') and line.endswith('**'):
-                bold_text = line.replace('**', '')
-                html_content += f'<p><strong>{bold_text}</strong></p>\n'
+            if has_concerning_patterns:
+                story.append(Paragraph("Patterns Observed", subsection_style))
+                for pattern in parsed_analysis['patterns_noted']:
+                    story.append(Paragraph(f"• {pattern}", bullet_style))
+                story.append(Spacer(1, 16))
+        
+        # Recommendations - conditional based on clinical status
+        if parsed_analysis['recommendations']:
+            needs_recommendations = not any(
+                'current management appears effective' in rec.lower() or
+                'continue current' in rec.lower()
+                for rec in parsed_analysis['recommendations']
+            )
+            
+            if needs_recommendations and not all_targets_met:
+                story.append(Paragraph("Recommendations", subsection_style))
+                for i, rec in enumerate(parsed_analysis['recommendations'], 1):
+                    story.append(Paragraph(f"{i}. {rec}", bullet_style))
             else:
-                if len(line) > 0:
-                    html_content += f'<p>{line}</p>\n'
+                story.append(Paragraph("Recommendations", subsection_style))
+                if all_targets_met:
+                    story.append(Paragraph("Excellent glucose management. Continue current diabetes care plan and monitoring schedule.", body_style))
+                elif critical_targets_met:
+                    story.append(Paragraph("Good glucose control with key safety targets met. Continue current management with regular monitoring.", body_style))
+                else:
+                    # Show specific recommendations if targets not met
+                    for i, rec in enumerate(parsed_analysis['recommendations'], 1):
+                        story.append(Paragraph(f"{i}. {rec}", bullet_style))
         
-        if in_section:
-            html_content += "</div>\n"
-        
-        # Close the HTML
-        html_content += f"""
-                </div>
-            </div>
-        </div>
-        
-        <div class="footer">
-            <p><em>Analysis Period: {summary_30_data['StartDate'].iloc[0]} to {summary_30_data['EndDate'].iloc[0]} ({summary_30_data['TotalDays'].iloc[0]} days)</em></p>
-        </div>
-    </div>
-</body>
-</html>
-"""
-        
-        # Save the HTML file
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write(html_content)
-        
-        print(f"Beautiful HTML report saved to: {output_file}")
-        print("Open this file in your web browser to view the formatted report!")
+        # Build PDF
+        doc.build(story)
+        print(f"PDF report saved as: {output_filename}")
         
     except Exception as e:
-        print(f"Error creating HTML report: {e}")
-        # Fallback to simple text
-        with open(output_file.replace('.html', '.txt'), 'w', encoding='utf-8') as file:
-            file.write(report)
-        print(f"Fallback text report saved to: {output_file.replace('.html', '.txt')}")
+        print(f"Error creating PDF: {e}")
+    
+    finally:
+        # Clean up temporary files
+        import shutil
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+def validate_llm_response(response, daily_data, summary_7_data, summary_30_data):
+    """Check if LLM response contains hallucinated numbers"""
+    
+    actual_7day_mean = summary_7_data['MeanGlucose'].iloc[0]
+    actual_7day_tir = summary_7_data['AvgPercentInRange'].iloc[0]
+    actual_30day_mean = summary_30_data['MeanGlucose'].iloc[0]
+    actual_30day_tir = summary_30_data['AvgPercentInRange'].iloc[0]
+    
+    issues = []
+    
+    if str(actual_7day_mean) not in response:
+        issues.append(f"Missing 7-day mean glucose ({actual_7day_mean})")
+    
+    if str(actual_7day_tir) not in response:
+        issues.append(f"Missing 7-day time-in-range ({actual_7day_tir}%)")
+    
+    import re
+    numbers_in_response = re.findall(r'\b\d+\.?\d*\b', response)
+    glucose_values = [float(n) for n in numbers_in_response if 50 <= float(n) <= 400]
+    
+    actual_glucose_values = [
+        actual_7day_mean, actual_30day_mean,
+        summary_7_data['AvgPercentInRange'].iloc[0],
+        summary_30_data['AvgPercentInRange'].iloc[0]
+    ]
+    
+    hallucinated_values = [v for v in glucose_values if not any(abs(v - actual) < 1 for actual in actual_glucose_values)]
+    
+    if hallucinated_values:
+        issues.append(f"Potential hallucinated values: {hallucinated_values}")
+    
+    return issues
+
+def generate_cgm_report(txt_file, daily_csv, summary_7_csv, summary_30_csv):
+    """Generate comprehensive CGM analysis report with PDF export"""
+    
+    print("Reading CGM data files...")
+    
+    try:
+        daily_data = pd.read_csv(daily_csv)
+        summary_7_data = pd.read_csv(summary_7_csv)
+        summary_30_data = pd.read_csv(summary_30_csv)
+    except Exception as e:
+        return f"Error reading CSV files: {e}"
+    
+    if daily_data.empty or summary_7_data.empty or summary_30_data.empty:
+        return "Error: One or more CSV files are empty"
+    
+    print(f"Data loaded: {len(daily_data)} daily records, 7-day summary, 30-day summary")
+    
+    try:
+        # Format data for LLM
+        summary_7_text, summary_30_text, daily_text = format_data_for_llm(
+            daily_data, summary_7_data, summary_30_data
+        )
+        
+        # Create focused prompt
+        prompt = create_focused_prompt(summary_7_text, summary_30_text, daily_text)
+        
+        print("Sending to Ollama...")
+        
+        # Get analysis from Ollama
+        response = chat_with_ollama(prompt)
+        
+        # Validate response
+        issues = validate_llm_response(response, daily_data, summary_7_data, summary_30_data)
+        
+        if issues:
+            print("\nWARNING - Potential issues detected:")
+            for issue in issues:
+                print(f"- {issue}")
+            print("\nYou may want to regenerate the report.")
+        
+        # Generate PDF report
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        pdf_filename = f"CGM_Analysis_Report_{timestamp}.pdf"
+        
+        print(f"Generating PDF report: {pdf_filename}")
+        create_pdf_report(response, daily_data, summary_7_data, summary_30_data, pdf_filename)
+        
+        return response
+        
+    except Exception as e:
+        return f"Error processing data: {e}"
+
+def debug_data_structure(csv_file):
+    """Debug function to inspect CSV structure"""
+    try:
+        df = pd.read_csv(csv_file)
+        print(f"\nDEBUG - {csv_file}:")
+        print(f"Shape: {df.shape}")
+        print(f"Columns: {list(df.columns)}")
+        print("First few rows:")
+        print(df.head())
+        print("Data types:")
+        print(df.dtypes)
+        print("\n" + "="*50)
+        return df
+    except Exception as e:
+        print(f"Error reading {csv_file}: {e}")
+        return None
 
 def find_files():
     """Find CGM analysis files in current directory and data subdirectory"""
@@ -555,58 +753,58 @@ def find_files():
     print(f"Looking for files in: {current_dir}")
     print(f"Also checking data directory: {data_dir}")
     
-    # Define expected file names and possible locations
     files = {
-        'txt_file': 'cgm_analysis_report.txt',  # Optional
+        'txt_file': 'cgm_analysis_report.txt',
         'daily_csv': 'daily_cgm_summaries.csv',
         'summary_7_csv': '7_day_summary.csv',
         'summary_30_csv': '30_day_summary.csv'
     }
     
-    # Required files (CSV files)
     required_files = ['daily_csv', 'summary_7_csv', 'summary_30_csv']
     
-    # Check if files exist in multiple locations
     found_files = {}
     missing_files = []
     
     for file_type, filename in files.items():
-        # Check current directory first
         current_path = filename
         data_path = os.path.join('data', filename)
         
         if os.path.exists(current_path):
             found_files[file_type] = current_path
-            print(f"✓ Found: {current_path}")
+            print(f"Found: {current_path}")
         elif os.path.exists(data_path):
             found_files[file_type] = data_path
-            print(f"✓ Found: {data_path}")
+            print(f"Found: {data_path}")
         else:
             if file_type in required_files:
                 missing_files.append(filename)
-                print(f"✗ Missing: {filename} (checked both . and ./data/)")
+                print(f"Missing: {filename} (checked both . and ./data/)")
             else:
-                print(f"⚠ Optional file not found: {filename}")
-                found_files[file_type] = None  # Mark as optional
+                print(f"Optional file not found: {filename}")
+                found_files[file_type] = None
     
     return found_files, missing_files
 
 def main():
-    """Main function to run the CGM analysis"""
-    print("CGM Data Clinical Analysis Tool")
-    print("=" * 40)
+    """Main function with PDF export capability"""
+    print("CGM Data Clinical Analysis Tool with PDF Export")
+    print("=" * 50)
     
-    # Find files automatically
+    # Find files
     found_files, missing_files = find_files()
     
     if missing_files:
         print(f"\nMissing required files: {missing_files}")
-        print("Please make sure you've run the CGM analysis notebook first to generate these files.")
         return
     
-    print(f"\nAll required files found! Proceeding with analysis...")
+    # Debug: Inspect data structure first
+    print("\nDEBUGGING DATA STRUCTURE:")
+    for file_type, filepath in found_files.items():
+        if filepath and file_type.endswith('_csv'):
+            debug_data_structure(filepath)
     
-    # Generate the report
+    # Generate report
+    print("Generating analysis...")
     report = generate_cgm_report(
         found_files['txt_file'],
         found_files['daily_csv'], 
@@ -614,22 +812,10 @@ def main():
         found_files['summary_30_csv']
     )
     
-    # Read the data for charts
-    daily_data = read_csv_file(found_files['daily_csv'])
-    summary_7_data = read_csv_file(found_files['summary_7_csv'])
-    summary_30_data = read_csv_file(found_files['summary_30_csv'])
-    
-    # Print the report
     print("\n" + "=" * 50)
     print("CLINICAL ANALYSIS REPORT")
     print("=" * 50)
     print(report)
-    
-    # Save to beautiful HTML report
-    save_report_as_html(report, daily_data, summary_7_data, summary_30_data, "cgm_clinical_report.html")
-    
-    print("\n" + "=" * 50)
-    print("Analysis Complete!")
 
 if __name__ == "__main__":
     main()
