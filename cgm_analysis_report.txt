@@ -1,0 +1,110 @@
+
+CGM DATA ANALYSIS REPORT
+Patient ID: 1
+Analysis Period: 2025-07-10 to 2025-07-23
+
+RECENT PERIOD SUMMARIES:
+
+Last 7 Days:
+- Average Glucose: 116.74 mg/dL
+- Time in Range (70-180 mg/dL): 99.25%
+- Time Above Range (>180 mg/dL): 0.75%
+- Time Below Range (<70 mg/dL): 0.0%
+- Glucose Variability: 4.37 mg/dL
+- Average Daily High Time: 0.16 hours
+- Average Daily Low Time: 0.0 hours
+
+Last 30 Days:
+- Average Glucose: 110.23 mg/dL
+- Time in Range (70-180 mg/dL): 94.59%
+- Time Above Range (>180 mg/dL): 1.49%
+- Time Below Range (<70 mg/dL): 3.92%
+- Glucose Variability: 12.86 mg/dL
+- Highest Glucose Observed: 257.0 mg/dL
+- Lowest Glucose Observed: 59.0 mg/dL
+
+DAILY BREAKDOWN (Last 14 Days):
+
+2025-07-10 (Thursday):
+  Mean: 70.82 mg/dL | Range: 59.0-89.0 mg/dL
+  Time in Range: 45.45% | High: 0.0% | Low: 54.55%
+  Peak at 23:51 (89.0 mg/dL) | Lowest at 22:11 (59.0 mg/dL)
+  Standard Deviation: 7.99 mg/dL
+
+2025-07-11 (Friday):
+  Mean: 106.89 mg/dL | Range: 69.0-257.0 mg/dL
+  Time in Range: 94.1% | High: 5.56% | Low: 0.35%
+  Peak at 18:36 (257.0 mg/dL) | Lowest at 05:51 (69.0 mg/dL)
+  Standard Deviation: 33.97 mg/dL
+
+2025-07-12 (Saturday):
+  Mean: 100.42 mg/dL | Range: 73.0-164.0 mg/dL
+  Time in Range: 100.0% | High: 0.0% | Low: 0.0%
+  Peak at 15:26 (164.0 mg/dL) | Lowest at 03:51 (73.0 mg/dL)
+  Standard Deviation: 20.62 mg/dL
+
+2025-07-13 (Sunday):
+  Mean: 107.89 mg/dL | Range: 73.0-184.0 mg/dL
+  Time in Range: 99.31% | High: 0.69% | Low: 0.0%
+  Peak at 14:56 (184.0 mg/dL) | Lowest at 17:01 (73.0 mg/dL)
+  Standard Deviation: 16.12 mg/dL
+
+2025-07-14 (Monday):
+  Mean: 110.61 mg/dL | Range: 89.0-148.0 mg/dL
+  Time in Range: 100.0% | High: 0.0% | Low: 0.0%
+  Peak at 19:06 (148.0 mg/dL) | Lowest at 01:26 (89.0 mg/dL)
+  Standard Deviation: 11.39 mg/dL
+
+2025-07-15 (Tuesday):
+  Mean: 118.8 mg/dL | Range: 78.0-255.0 mg/dL
+  Time in Range: 94.1% | High: 5.9% | Low: 0.0%
+  Peak at 21:21 (255.0 mg/dL) | Lowest at 23:16 (78.0 mg/dL)
+  Standard Deviation: 29.49 mg/dL
+
+2025-07-16 (Wednesday):
+  Mean: 110.62 mg/dL | Range: 79.0-201.0 mg/dL
+  Time in Range: 96.53% | High: 3.47% | Low: 0.0%
+  Peak at 21:36 (201.0 mg/dL) | Lowest at 01:21 (79.0 mg/dL)
+  Standard Deviation: 22.58 mg/dL
+
+2025-07-17 (Thursday):
+  Mean: 113.5 mg/dL | Range: 77.0-182.0 mg/dL
+  Time in Range: 99.65% | High: 0.35% | Low: 0.0%
+  Peak at 21:56 (182.0 mg/dL) | Lowest at 01:36 (77.0 mg/dL)
+  Standard Deviation: 20.48 mg/dL
+
+2025-07-18 (Friday):
+  Mean: 122.82 mg/dL | Range: 97.0-167.0 mg/dL
+  Time in Range: 100.0% | High: 0.0% | Low: 0.0%
+  Peak at 21:26 (167.0 mg/dL) | Lowest at 22:41 (97.0 mg/dL)
+  Standard Deviation: 13.54 mg/dL
+
+2025-07-19 (Saturday):
+  Mean: 112.69 mg/dL | Range: 96.0-163.0 mg/dL
+  Time in Range: 100.0% | High: 0.0% | Low: 0.0%
+  Peak at 15:11 (163.0 mg/dL) | Lowest at 00:31 (96.0 mg/dL)
+  Standard Deviation: 12.6 mg/dL
+
+2025-07-20 (Sunday):
+  Mean: 111.49 mg/dL | Range: 83.0-159.0 mg/dL
+  Time in Range: 100.0% | High: 0.0% | Low: 0.0%
+  Peak at 14:26 (159.0 mg/dL) | Lowest at 16:46 (83.0 mg/dL)
+  Standard Deviation: 16.33 mg/dL
+
+2025-07-21 (Monday):
+  Mean: 116.89 mg/dL | Range: 96.0-193.0 mg/dL
+  Time in Range: 97.92% | High: 2.08% | Low: 0.0%
+  Peak at 11:32 (193.0 mg/dL) | Lowest at 00:17 (96.0 mg/dL)
+  Standard Deviation: 18.91 mg/dL
+
+2025-07-22 (Tuesday):
+  Mean: 121.1 mg/dL | Range: 89.0-180.0 mg/dL
+  Time in Range: 100.0% | High: 0.0% | Low: 0.0%
+  Peak at 19:17 (180.0 mg/dL) | Lowest at 23:57 (89.0 mg/dL)
+  Standard Deviation: 17.53 mg/dL
+
+2025-07-23 (Wednesday):
+  Mean: 118.72 mg/dL | Range: 89.0-223.0 mg/dL
+  Time in Range: 97.16% | High: 2.84% | Low: 0.0%
+  Peak at 11:12 (223.0 mg/dL) | Lowest at 00:02 (89.0 mg/dL)
+  Standard Deviation: 21.49 mg/dL
