@@ -55,7 +55,7 @@ def chat_with_ollama(prompt, model="mistral-nemo"):
                                        'top_k': 50,
                                        'num_ctx': 8192
                                    }
-                               }, timeout=120)
+                               }, timeout=360)
         
         if response.status_code != 200:
             return f"Error: Ollama returned status {response.status_code}. Response: {response.text}"
@@ -468,7 +468,7 @@ def create_time_in_range_chart_fig(daily_data):
     
     # Apple-style legend
     legend = ax.legend(frameon=False, loc='upper right', fontsize=11,
-                      bbox_to_anchor=(0.98, 0.98), ncol=1)
+                      bbox_to_anchor=(1, 1.5), ncol=1)
     for text in legend.get_texts():
         text.set_color('#1D1D1F')
         text.set_fontweight('500')
